@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  VENDOR
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+model User {
+  id                         String         @id @default(cuid())
+  name                       String
+  email                      String         @unique
+  passwordHash               String
+  emailVerified              Boolean        @default(true)
+  emailVerificationTokenHash String?        @unique
+  emailVerificationExpiresAt DateTime?
+  role                       UserRole       @default(CUSTOMER)
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+  store                      Store?
+  orders                     Order[]        @relation("CustomerOrders")
+  reviews                    Review[]
+  orderMessages              OrderMessage[]
+}
+
+model Store {
+  id             String    @id @default(cuid())
+  name           String
+  tagline        String
+  cuisine        String
+  description    String
+  location       String
+  whatsappNumber String?
+  latitude       Float?
+  longitude      Float?
+  isOpen         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  vendorId       String    @unique
+  vendor         User      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products       Product[]
+  orders         Order[]
+  reviews        Review[]
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  description String
+  price       Float
+  category    String
+  image       String
+  createdAt   DateTime    @default(now())
+  storeId     String
+  store       Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+
+  @@index([storeId])
+}
+
+model Order {
+  id              String         @id @default(cuid())
+  status          OrderStatus    @default(PENDING)
+  customerName    String
+  deliveryAddress String
+  subtotal        Float
+  deliveryFee     Float          @default(3.5)
+  total           Float
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  customerId      String
+  customer        User           @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Restrict)
+  storeId         String
+  store           Store          @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  items           OrderItem[]
+  review          Review?
+  messages        OrderMessage[]
+
+  @@index([storeId, status, createdAt])
+  @@index([customerId, createdAt])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  name      String
+  unitPrice Float
+  quantity  Int
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  rating     Int
+  comment    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt])
+}
+
+model OrderMessage {
+  id             String    @id @default(cuid())
+  body           String
+  createdAt      DateTime  @default(now())
+  orderId        String
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User      @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  customerReadAt DateTime?
+  vendorReadAt   DateTime?
+
+  @@index([orderId, createdAt])
+}
