@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { API_BASE, ApiError, apiRequest } from "@/lib/api";
 import OrderChat from "@/app/components/order-chat";
+import EmailVerificationDialog from "@/app/components/email-verification-dialog";
 import { getCurrentCoordinates, type Coordinates } from "@/lib/geolocation";
 import { productImageUrl, uploadProductImage } from "@/lib/product-image";
 import type { VendorProduct, VendorStore } from "@/lib/vendor-store";
@@ -72,6 +73,7 @@ export default function VendorPage() {
   const [authPassword, setAuthPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [verificationNotice, setVerificationNotice] = useState("");
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const [storeName, setStoreName] = useState("");
   const [tagline, setTagline] = useState("");
   const [cuisine, setCuisine] = useState(cuisines[0]);
@@ -136,29 +138,6 @@ export default function VendorPage() {
   }, []);
 
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const token = url.searchParams.get("verify");
-    if (!token) return;
-
-    url.searchParams.delete("verify");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-    let active = true;
-    apiRequest<{ message: string }>("/auth/verify-email", {
-      method: "POST",
-      body: JSON.stringify({ token })
-    })
-      .then(({ message }) => {
-        if (!active) return;
-        setAuthMode("login");
-        setVerificationNotice(message);
-      })
-      .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : "Could not verify your email.");
-      });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
     const storeId = store?.id;
     if (user?.role !== "VENDOR" || !storeId) return;
     let active = true;
@@ -198,6 +177,7 @@ export default function VendorPage() {
           body: JSON.stringify({ name: authName, email: authEmail, password: authPassword })
         });
         setVerificationNotice(message);
+        setVerificationOpen(true);
         setAuthPassword("");
         return;
       }
@@ -218,23 +198,12 @@ export default function VendorPage() {
         setStore(null);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not sign in. Please try again.");
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  async function resendVerification() {
-    setAuthBusy(true);
-    setError("");
-    try {
-      const { message } = await apiRequest<{ message: string }>("/auth/resend-verification", {
-        method: "POST",
-        body: JSON.stringify({ email: authEmail })
-      });
-      setVerificationNotice(message);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not resend the verification email.");
+      if (authMode === "login" && cause instanceof ApiError && cause.status === 403) {
+        setVerificationOpen(true);
+        setVerificationNotice("Enter the 6-digit code sent to your email, or request a new code below.");
+      } else {
+        setError(cause instanceof Error ? cause.message : "Could not sign in. Please try again.");
+      }
     } finally {
       setAuthBusy(false);
     }
@@ -488,11 +457,6 @@ export default function VendorPage() {
             <label className="vendor-field-wide">Password<input required type="password" minLength={authMode === "register" ? 10 : 1} maxLength={72} autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder={authMode === "register" ? "At least 10 characters" : "Your password"} /></label>
             <button className="vendor-primary vendor-field-wide" type="submit" disabled={authBusy}>{authBusy ? "Please wait..." : authMode === "register" ? "Create account" : "Sign in"} <span>→</span></button>
           </form>
-          {verificationNotice && (
-            <button className="account-switch" disabled={authBusy} onClick={() => void resendVerification()}>
-              Resend verification email
-            </button>
-          )}
           <p className="vendor-auth-switch">
             {authMode === "register" ? "Already have a vendor account?" : "New to Savor?"}{" "}
             <button onClick={() => { setAuthMode(authMode === "register" ? "login" : "register"); setError(""); setVerificationNotice(""); }}>
@@ -700,6 +664,16 @@ export default function VendorPage() {
           <p className="vendor-storage-note">This demo saves your store on this device only. Add an API and database for accounts, shared listings, and real orders.</p>
         </div>
       )}
+      <EmailVerificationDialog
+        email={authEmail}
+        open={verificationOpen}
+        onClose={() => setVerificationOpen(false)}
+        onVerified={(message) => {
+          setVerificationOpen(false);
+          setAuthMode("login");
+          setVerificationNotice(message);
+        }}
+      />
       <footer className="vendor-footer"><span>Made with care in Brooklyn, NY.</span><Link href="/">Back to Savor</Link></footer>
     </main>
   );

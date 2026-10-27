@@ -1,8 +1,9 @@
-import { IsString, MaxLength, MinLength } from "class-validator";
+import { IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 export class VerifyEmailDto {
   @IsString()
-  @MinLength(32)
-  @MaxLength(100)
-  token!: string;
+  @MinLength(6)
+  @MaxLength(6)
+  @Matches(/^\d{6}$/)
+  code!: string;
 }

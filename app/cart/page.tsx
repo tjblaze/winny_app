@@ -28,6 +28,8 @@ export default function CartPage() {
   const [customerName, setCustomerName] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [checkoutStarted, setCheckoutStarted] = useState(false);
+  const [demoPaymentConfirmed, setDemoPaymentConfirmed] = useState(false);
+  const [confirmingDemoPayment, setConfirmingDemoPayment] = useState(false);
   const [error, setError] = useState("");
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderMessage, setOrderMessage] = useState("");
@@ -168,6 +170,7 @@ export default function CartPage() {
   function updateQuantity(id: string, delta: number) {
     setError("");
     setOrderMessage("");
+    setDemoPaymentConfirmed(false);
     setCart((current) => {
       const next = { ...current, [id]: (current[id] ?? 0) + delta };
       if (next[id] <= 0) delete next[id];
@@ -179,12 +182,29 @@ export default function CartPage() {
     setCart({});
     setError("");
     setOrderMessage("");
+    setDemoPaymentConfirmed(false);
+  }
+
+  async function confirmDemoPayment() {
+    if (confirmingDemoPayment || demoPaymentConfirmed) return;
+    setConfirmingDemoPayment(true);
+    setError("");
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+      setDemoPaymentConfirmed(true);
+    } finally {
+      setConfirmingDemoPayment(false);
+    }
   }
 
   async function placeOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitActive.current) return;
     setError("");
+    if (!demoPaymentConfirmed) {
+      setError("Confirm the demo payment before placing your order.");
+      return;
+    }
     if (account?.role !== "CUSTOMER") {
       setError(account?.role === "VENDOR"
         ? "Sign out and sign in with a customer account to place an order."
@@ -204,6 +224,7 @@ export default function CartPage() {
         body: JSON.stringify({
           customerName: customerName.trim(),
           deliveryAddress: deliveryAddress.trim(),
+          demoPaymentConfirmed: true,
           items: cartItems.map(({ dish, quantity }) => ({
             productId: dish.id,
             quantity
@@ -332,13 +353,37 @@ export default function CartPage() {
                     <input required minLength={2} maxLength={80} value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Alex Morgan" />
                   </label>
                   <label>Delivery address
-                    <input required minLength={5} maxLength={300} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} placeholder="12 Market Street" />
+                    <input required minLength={5} maxLength={300} value={deliveryAddress} onChange={(event) => { setDeliveryAddress(event.target.value); setDemoPaymentConfirmed(false); }} placeholder="12 Market Street" />
                   </label>
+                  <section className={`demo-payment${demoPaymentConfirmed ? " is-confirmed" : ""}`} aria-labelledby="demo-payment-title">
+                    <div className="demo-payment-heading">
+                      <span className="demo-payment-icon" aria-hidden="true">{demoPaymentConfirmed ? "✓" : "✳"}</span>
+                      <div>
+                        <h3 id="demo-payment-title">Demo payment</h3>
+                        <p>{demoPaymentConfirmed ? "Payment simulation complete" : "Try the checkout flow — no real payment"}</p>
+                      </div>
+                    </div>
+                    <div className="demo-payment-total">
+                      <span>Due today</span>
+                      <strong>{money.format(subtotal + deliveryFee)}</strong>
+                    </div>
+                    <p className="demo-payment-disclaimer">Demo only. No card details are collected and no money will be charged.</p>
+                    {!demoPaymentConfirmed && (
+                      <button
+                        className="demo-payment-button"
+                        type="button"
+                        onClick={() => void confirmDemoPayment()}
+                        disabled={confirmingDemoPayment}
+                      >
+                        {confirmingDemoPayment ? "Simulating payment..." : "Simulate successful payment"}
+                      </button>
+                    )}
+                  </section>
                   {!accountChecked ? (
                     <p className="cart-page-checkout-note">Checking your account...</p>
                   ) : account?.role === "CUSTOMER" ? (
-                    <button className="checkout-button" type="submit" disabled={placingOrder}>
-                      {placingOrder ? "Sending to the kitchen..." : "Place order"} <span>→</span>
+                    <button className="checkout-button" type="submit" disabled={placingOrder || !demoPaymentConfirmed}>
+                      {placingOrder ? "Sending to the kitchen..." : demoPaymentConfirmed ? "Place demo order" : "Complete payment to continue"} <span>→</span>
                     </button>
                   ) : account?.role !== "VENDOR" ? (
                     <Link className="checkout-button checkout-sign-in" href="/account?returnTo=checkout">

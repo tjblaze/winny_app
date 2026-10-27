@@ -72,6 +72,10 @@ export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(customer: AuthUser, input: CreateOrderDto) {
+    if (!input.demoPaymentConfirmed) {
+      throw new BadRequestException("Confirm the demo payment before placing your order.");
+    }
+
     const quantities = new Map<string, number>();
     for (const line of input.items) {
       quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + line.quantity);

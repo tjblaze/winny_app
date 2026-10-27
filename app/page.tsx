@@ -114,6 +114,8 @@ export default function Home() {
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [demoPaymentConfirmed, setDemoPaymentConfirmed] = useState(false);
+  const [confirmingDemoPayment, setConfirmingDemoPayment] = useState(false);
   const orderSubmissionActive = useRef(false);
   const [vendorStores, setVendorStores] = useState<VendorStore[]>([]);
   const [knownVendorDishes, setKnownVendorDishes] = useState<Record<string, Dish>>({});
@@ -307,6 +309,7 @@ export default function Home() {
     setCheckoutError("");
     setOrderMessage("");
     setCartSaveMessage("");
+    setDemoPaymentConfirmed(false);
     if (amount > 0) setCartOpen(true);
     setCart((current) => {
       const next = { ...current, [id]: (current[id] ?? 0) + amount };
@@ -337,6 +340,10 @@ export default function Home() {
       setCheckoutError("Orders can only be placed for dishes from open vendor stores.");
       return;
     }
+    if (!demoPaymentConfirmed) {
+      setCheckoutError("Complete the demo payment before placing your order.");
+      return;
+    }
     orderSubmissionActive.current = true;
     setPlacingOrder(true);
     try {
@@ -345,6 +352,7 @@ export default function Home() {
         body: JSON.stringify({
           customerName: checkoutName.trim(),
           deliveryAddress: deliveryAddress.trim(),
+          demoPaymentConfirmed: true,
           items: orderableItems.map((dish) => ({
             productId: dish.id,
             quantity: cart[dish.id]
@@ -355,6 +363,7 @@ export default function Home() {
         throw new Error("The order was not confirmed. Please check your bag and try again.");
       }
       setCart({});
+      setDemoPaymentConfirmed(false);
       setOrderPlaced(true);
       setOrderMessage(
         `Order${orders.length === 1 ? "" : "s"} ${orders.map((order) => order.id).join(", ")} ${orders.length === 1 ? "is" : "are"} placed! The vendor will confirm and update its progress.`
@@ -374,6 +383,18 @@ export default function Home() {
     } finally {
       orderSubmissionActive.current = false;
       setPlacingOrder(false);
+    }
+  }
+
+  async function confirmDemoPayment() {
+    if (confirmingDemoPayment || demoPaymentConfirmed) return;
+    setConfirmingDemoPayment(true);
+    setCheckoutError("");
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+      setDemoPaymentConfirmed(true);
+    } finally {
+      setConfirmingDemoPayment(false);
     }
   }
 
@@ -639,15 +660,39 @@ export default function Home() {
                 {canPlaceOrder ? (
                   <form className="marketplace-checkout" onSubmit={placeOrder}>
                     <label>Your name<input required minLength={2} maxLength={80} value={checkoutName} onChange={(event) => setCheckoutName(event.target.value)} placeholder="Alex Morgan" /></label>
-                    <label>Delivery address<input required minLength={5} maxLength={300} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} placeholder="12 Market Street" /></label>
+                    <label>Delivery address<input required minLength={5} maxLength={300} value={deliveryAddress} onChange={(event) => { setDeliveryAddress(event.target.value); setDemoPaymentConfirmed(false); }} placeholder="12 Market Street" /></label>
+                    <section className={`demo-payment${demoPaymentConfirmed ? " is-confirmed" : ""}`} aria-labelledby="marketplace-demo-payment-title">
+                      <div className="demo-payment-heading">
+                        <span className="demo-payment-icon" aria-hidden="true">{demoPaymentConfirmed ? "✓" : "✳"}</span>
+                        <div>
+                          <h3 id="marketplace-demo-payment-title">Demo payment</h3>
+                          <p>{demoPaymentConfirmed ? "Payment simulation complete" : "Try checkout — no real payment"}</p>
+                        </div>
+                      </div>
+                      <div className="demo-payment-total">
+                        <span>Due today</span>
+                        <strong>{money.format(subtotal + deliveryFee)}</strong>
+                      </div>
+                      <p className="demo-payment-disclaimer">Demo only. No card details are collected and no money will be charged.</p>
+                      {!demoPaymentConfirmed && (
+                        <button
+                          className="demo-payment-button"
+                          type="button"
+                          onClick={() => void confirmDemoPayment()}
+                          disabled={confirmingDemoPayment}
+                        >
+                          {confirmingDemoPayment ? "Simulating payment..." : "Simulate successful payment"}
+                        </button>
+                      )}
+                    </section>
                     {checkoutError && <p className="vendor-alert checkout-error" role="alert">{checkoutError}{checkoutError.startsWith("Sign in") && <Link href="/account?returnTo=checkout">Sign in ↗</Link>}</p>}
                     {!accountChecked ? (
                       <p className="checkout-account-note">Checking your account before checkout…</p>
                     ) : account?.role === "VENDOR" ? (
                       <p className="checkout-account-note">You are signed in as a vendor. <Link href="/account">Sign out and switch to a customer account</Link> to place this order.</p>
                     ) : account ? (
-                      <button className="checkout-button" type="submit" disabled={placingOrder}>
-                        {placingOrder ? "Sending to the kitchen..." : "Place order"} <span aria-hidden="true">→</span>
+                      <button className="checkout-button" type="submit" disabled={placingOrder || !demoPaymentConfirmed}>
+                        {placingOrder ? "Sending to the kitchen..." : demoPaymentConfirmed ? "Place demo order" : "Complete payment to continue"} <span aria-hidden="true">→</span>
                       </button>
                     ) : (
                       <Link className="checkout-button checkout-sign-in" href="/account?returnTo=checkout">

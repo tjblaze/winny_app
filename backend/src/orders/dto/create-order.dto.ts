@@ -4,6 +4,8 @@ import {
   IsArray,
   IsInt,
   IsNotEmpty,
+  IsBoolean,
+  Equals,
   IsString,
   MinLength,
   MaxLength,
@@ -23,6 +25,10 @@ export class OrderLineDto {
 }
 
 export class CreateOrderDto {
+  @IsBoolean()
+  @Equals(true)
+  demoPaymentConfirmed!: boolean;
+
   @IsString()
   @MinLength(2)
   @MaxLength(80)

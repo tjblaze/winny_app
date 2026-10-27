@@ -33,10 +33,11 @@ npm run db:push
 
 Account registration now requires email verification. Configure `SMTP_HOST`,
 `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASS` in `backend\.env` to send verification
-links. For Gmail, use `smtp.gmail.com`, port `465`, your Gmail address, and a
+codes. For Gmail, use `smtp.gmail.com`, port `465`, your Gmail address, and a
 Google App Password (enable 2-Step Verification in the Google account first).
-`MAIL_FROM` is optional and defaults to `SMTP_USER`. Verification links expire
-after 24 hours; users can request a replacement link from the signup page.
+`MAIL_FROM` is optional and defaults to `SMTP_USER`. Six-digit verification
+codes expire after 10 minutes; users can request a replacement code from the
+signup page.
 Run `npm run db:push` after updating the app to add the verification fields to
 an existing local database.
 
@@ -103,12 +104,16 @@ the account role and refreshes its session cookie. A production marketplace
 should add vendor identity/business verification and an administrative review
 workflow before allowing stores to take orders.
 
+Checkout currently includes a demo-only payment confirmation step. It does not
+collect payment details or charge money; replace it with a payment provider and
+server-verified payment status before using the marketplace for real purchases.
+
 ## API routes
 
 - `POST /api/auth/register` — create an unverified customer account and email a
-  verification link.
-- `POST /api/auth/verify-email` — verify an email with its link token.
-- `POST /api/auth/resend-verification` — send another verification link.
+  six-digit verification code.
+- `POST /api/auth/verify-email` — verify an email with its six-digit code.
+- `POST /api/auth/resend-verification` — send another verification code.
 - `POST /api/auth/login` — start a session.
 - `POST /api/auth/logout` — clear the session cookie.
 - `GET /api/auth/me` — return the signed-in account.

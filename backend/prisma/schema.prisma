@@ -28,7 +28,7 @@ model User {
   email                      String         @unique
   passwordHash               String
   emailVerified              Boolean        @default(true)
-  emailVerificationTokenHash String?        @unique
+  emailVerificationCodeHash  String?        @unique @map("emailVerificationTokenHash")
   emailVerificationExpiresAt DateTime?
   role                       UserRole       @default(CUSTOMER)
   createdAt                  DateTime       @default(now())

@@ -46,7 +46,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   verifyEmail(@Body() input: VerifyEmailDto) {
-    return this.authService.verifyEmail(input.token);
+    return this.authService.verifyEmail(input.code);
   }
 
   @Post("resend-verification")

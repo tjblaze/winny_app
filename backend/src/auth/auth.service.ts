@@ -7,12 +7,13 @@ import {
 import { UserRole } from "@prisma/client";
 import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
-import { createHash, randomBytes } from "node:crypto";
+import { createHmac, randomInt } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import type { JwtPayload, AuthUser } from "./auth.types";
 import type { LoginDto } from "./dto/login.dto";
 import type { RegisterDto } from "./dto/register.dto";
 import { EmailService } from "./email.service";
+import { getJwtSecret } from "../config/jwt-secret";
 
 const safeUserSelect = {
   id: true,
@@ -32,9 +33,9 @@ export class AuthService {
   async register(input: RegisterDto): Promise<{ message: string }> {
     const email = input.email.trim().toLowerCase();
     const passwordHash = await hash(input.password, 12);
-    const token = randomBytes(32).toString("base64url");
-    const tokenHash = this.hashVerificationToken(token);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const code = this.createVerificationCode();
+    const codeHash = this.hashVerificationCode(code);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     try {
       const user = await this.prisma.user.create({
@@ -43,13 +44,13 @@ export class AuthService {
           email,
           passwordHash,
           emailVerified: false,
-          emailVerificationTokenHash: tokenHash,
+          emailVerificationCodeHash: codeHash,
           emailVerificationExpiresAt: expiresAt,
           role: UserRole.CUSTOMER
         },
         select: { name: true, email: true }
       });
-      await this.emailService.sendVerificationEmail(user.email, user.name, token);
+      await this.emailService.sendVerificationEmail(user.email, user.name, code);
     } catch (error) {
       if (
         error &&
@@ -57,29 +58,39 @@ export class AuthService {
         "code" in error &&
         error.code === "P2002"
       ) {
+        const existingUser = await this.prisma.user.findUnique({
+          where: { email },
+          select: { id: true, name: true, email: true, emailVerified: true }
+        });
+        if (existingUser && !existingUser.emailVerified) {
+          await this.sendVerificationForUser(existingUser);
+          return {
+            message: "A 6-digit verification code was sent to your email. Enter it below to activate your account."
+          };
+        }
         throw new ConflictException("An account with this email already exists.");
       }
       throw error;
     }
 
-    return { message: "Account created. Check your email for a verification link before signing in." };
+    return { message: "A 6-digit verification code was sent to your email. Enter it below to activate your account." };
   }
 
-  async verifyEmail(token: string): Promise<{ message: string }> {
+  async verifyEmail(code: string): Promise<{ message: string }> {
     const result = await this.prisma.user.updateMany({
       where: {
-        emailVerificationTokenHash: this.hashVerificationToken(token),
+        emailVerificationCodeHash: this.hashVerificationCode(code),
         emailVerified: false,
         emailVerificationExpiresAt: { gt: new Date() }
       },
       data: {
         emailVerified: true,
-        emailVerificationTokenHash: null,
+        emailVerificationCodeHash: null,
         emailVerificationExpiresAt: null
       }
     });
     if (result.count !== 1) {
-      throw new UnauthorizedException("This verification link is invalid or has expired.");
+      throw new UnauthorizedException("This verification code is invalid or has expired.");
     }
     return { message: "Email verified. You can now sign in." };
   }
@@ -91,17 +102,9 @@ export class AuthService {
       select: { id: true, name: true, email: true, emailVerified: true }
     });
     if (user && !user.emailVerified) {
-      const token = randomBytes(32).toString("base64url");
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          emailVerificationTokenHash: this.hashVerificationToken(token),
-          emailVerificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-        }
-      });
-      await this.emailService.sendVerificationEmail(user.email, user.name, token);
+      await this.sendVerificationForUser(user);
     }
-    return { message: "If an unverified account exists for that email, a verification link has been sent." };
+    return { message: "If an unverified account exists for that email, a new verification code has been sent." };
   }
 
   async login(input: LoginDto): Promise<{ user: AuthUser; token: string }> {
@@ -153,7 +156,27 @@ export class AuthService {
     return this.jwtService.signAsync(payload);
   }
 
-  private hashVerificationToken(token: string): string {
-    return createHash("sha256").update(token).digest("hex");
+  private createVerificationCode(): string {
+    return randomInt(0, 1_000_000).toString().padStart(6, "0");
+  }
+
+  private hashVerificationCode(code: string): string {
+    return createHmac("sha256", getJwtSecret()).update(code).digest("hex");
+  }
+
+  private async sendVerificationForUser(user: {
+    id: string;
+    name: string;
+    email: string;
+  }): Promise<void> {
+    const code = this.createVerificationCode();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerificationCodeHash: this.hashVerificationCode(code),
+        emailVerificationExpiresAt: new Date(Date.now() + 10 * 60 * 1000)
+      }
+    });
+    await this.emailService.sendVerificationEmail(user.email, user.name, code);
   }
 }

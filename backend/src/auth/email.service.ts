@@ -5,36 +5,20 @@ import nodemailer from "nodemailer";
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
-  async sendVerificationEmail(email: string, name: string, token: string): Promise<void> {
+  async sendVerificationEmail(email: string, name: string, code: string): Promise<void> {
     const host = process.env.SMTP_HOST?.trim();
     const portValue = process.env.SMTP_PORT?.trim();
     const user = process.env.SMTP_USER?.trim();
     const password = process.env.SMTP_PASS;
     const from = process.env.MAIL_FROM?.trim() || user;
-    const frontendOrigin = process.env.FRONTEND_ORIGIN?.split(",")[0]?.trim();
     const port = Number(portValue);
 
-    if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || !user || !password || !from || !frontendOrigin) {
+    if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || !user || !password || !from) {
       throw new ServiceUnavailableException(
         "Email verification is not configured. Please contact support."
       );
     }
 
-    let frontendUrl: URL;
-    try {
-      frontendUrl = new URL(frontendOrigin);
-    } catch {
-      throw new ServiceUnavailableException(
-        "Email verification is not configured. Please contact support."
-      );
-    }
-    if (frontendUrl.protocol !== "http:" && frontendUrl.protocol !== "https:") {
-      throw new ServiceUnavailableException(
-        "Email verification is not configured. Please contact support."
-      );
-    }
-    const verificationUrl = new URL("/account", frontendUrl.origin);
-    verificationUrl.searchParams.set("verify", token);
     const transporter = nodemailer.createTransport({
       host,
       port,
@@ -46,8 +30,8 @@ export class EmailService {
       await transporter.sendMail({
         from,
         to: email,
-        subject: "Verify your Savor email",
-        text: `Hi ${name},\n\nVerify your email address to activate your Savor account:\n${verificationUrl.toString()}\n\nThis link expires in 24 hours. If you did not create this account, you can ignore this email.`
+        subject: "Your Savor verification code",
+        text: `Hi ${name},\n\nYour Savor verification code is: ${code}\n\nEnter this 6-digit code on the verification screen to activate your account. It expires in 10 minutes. If you did not create this account, you can ignore this email.`
       });
     } catch {
       this.logger.error("Could not deliver an account verification email.");

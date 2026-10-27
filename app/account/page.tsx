@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { API_BASE, ApiError, apiRequest } from "@/lib/api";
 import OrderChat from "@/app/components/order-chat";
+import EmailVerificationDialog from "@/app/components/email-verification-dialog";
 
 type Account = {
   id: string;
@@ -82,6 +83,7 @@ export default function AccountPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [verificationNotice, setVerificationNotice] = useState("");
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
@@ -144,42 +146,20 @@ export default function AccountPage() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const token = url.searchParams.get("verify");
-    if (!token) return;
-
-    url.searchParams.delete("verify");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-    let active = true;
-    apiRequest<{ message: string }>("/auth/verify-email", {
-      method: "POST",
-      body: JSON.stringify({ token })
-    })
-      .then(({ message }) => {
-        if (!active) return;
-        setMode("login");
-        setVerificationNotice(message);
-      })
-      .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : "Could not verify your email.");
-      });
-    return () => { active = false; };
-  }, []);
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setError("");
     setVerificationNotice("");
+    const register = mode === "register";
     try {
-      const register = mode === "register";
       if (register) {
         const { message } = await apiRequest<{ message: string }>("/auth/register", {
           method: "POST",
           body: JSON.stringify({ name, email, password })
         });
         setVerificationNotice(message);
+        setVerificationOpen(true);
         setPassword("");
         return;
       }
@@ -191,23 +171,12 @@ export default function AccountPage() {
       setPassword("");
       returnToCheckoutIfRequested(account);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not sign in. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function resendVerification() {
-    setSubmitting(true);
-    setError("");
-    try {
-      const { message } = await apiRequest<{ message: string }>("/auth/resend-verification", {
-        method: "POST",
-        body: JSON.stringify({ email })
-      });
-      setVerificationNotice(message);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not resend the verification email.");
+      if (!register && cause instanceof ApiError && cause.status === 403) {
+        setVerificationOpen(true);
+        setVerificationNotice("Enter the 6-digit code sent to your email, or request a new code below.");
+      } else {
+        setError(cause instanceof Error ? cause.message : "Could not sign in. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -288,11 +257,6 @@ export default function AccountPage() {
                 {error && <p className="vendor-alert account-error" role="alert">{error}</p>}
                 <button className="vendor-primary vendor-field-wide" type="submit" disabled={submitting}>{submitting ? "Please wait..." : mode === "register" ? "Create my account" : "Sign in"} <span>→</span></button>
               </form>
-              {verificationNotice && (
-                <button className="account-switch" disabled={submitting} onClick={() => void resendVerification()}>
-                  Resend verification email
-                </button>
-              )}
               <p className="account-switch">
                 {mode === "register" ? "Already have an account?" : "New to Savor?"}{" "}
                 <button onClick={() => { setMode(mode === "register" ? "login" : "register"); setError(""); setVerificationNotice(""); }}>
@@ -304,6 +268,16 @@ export default function AccountPage() {
           {error && user && <p className="vendor-alert account-error" role="alert">{error}</p>}
         </section>
       </section>
+      <EmailVerificationDialog
+        email={email}
+        open={verificationOpen}
+        onClose={() => setVerificationOpen(false)}
+        onVerified={(message) => {
+          setVerificationOpen(false);
+          setMode("login");
+          setVerificationNotice(message);
+        }}
+      />
       {user?.role === "CUSTOMER" && (
         <section className="customer-orders" aria-labelledby="customer-orders-title">
           <div className="customer-orders-heading">
